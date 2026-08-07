@@ -1,0 +1,36 @@
+:root {
+  --nb-blue: #1e3a8a;
+  --nb-green: #166534;
+  --nb-red: #b91c1c;
+}
+
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+
+.nb-header { background: var(--nb-blue); color: white; }
+.nb-btn-primary { background: var(--nb-blue); color: white; }
+.nb-btn-primary:active { opacity: 0.85; }
+.nb-btn-danger { background: var(--nb-red); color: white; }
+
+.tab-btn { flex: 1; text-align: center; padding: 0.6rem 0; font-size: 0.85rem; }
+.tab-btn.active { background: var(--nb-green); color: white; font-weight: 600; border-radius: 999px; }
+
+.tag-chip {
+  display: inline-flex; align-items: center; gap: 0.25rem;
+  font-size: 0.7rem; font-weight: 600; letter-spacing: 0.02em;
+  padding: 0.15rem 0.65rem; border-radius: 999px;
+  background: #dcfce7; color: var(--nb-green);
+}
+.tag-chip button { color: #16653480; }
+
+.unsynced-badge {
+  background: #fef3c7; color: #92400e; font-size: 0.7rem; font-weight: 600;
+  padding: 0.2rem 0.6rem; border-radius: 999px;
+}
+
+.toast {
+  position: fixed; bottom: 5rem; left: 50%; transform: translateX(-50%);
+  background: #111827; color: white; padding: 0.6rem 1.2rem; border-radius: 999px;
+  font-size: 0.9rem; z-index: 50; opacity: 0; transition: opacity 0.2s;
+  max-width: 90vw; text-align: center;
+}
+.toast.show { opacity: 1; }

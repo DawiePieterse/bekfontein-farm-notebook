@@ -1,0 +1,52 @@
+import os
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+
+from backup import start_backup_scheduler
+from db import PHOTOS_DIR, create_db_and_tables, seed_defaults
+from routers import auth, backups, entries, tags
+
+app = FastAPI(title="Bekfontein Farm Notebook")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.include_router(auth.router)
+app.include_router(entries.router)
+app.include_router(tags.router)
+app.include_router(backups.router)
+
+
+@app.on_event("startup")
+def on_startup():
+    create_db_and_tables()
+    seed_defaults()
+    start_backup_scheduler()
+
+
+class NoCacheStaticFiles(StaticFiles):
+    """The installed PWA can stay open for days, so without this a browser
+    can silently keep serving JS/HTML from before the last deploy - screens
+    break with no visible error until someone manually clears the cache.
+    Forcing revalidation costs one cheap 304 per load and guarantees the
+    device picks up new code immediately.
+
+    Scoped to StaticFiles only (not a global app middleware) so it can't
+    affect API request handling/concurrency."""
+
+    def file_response(self, *args, **kwargs):
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
+app.mount("/photos", StaticFiles(directory=PHOTOS_DIR), name="photos")
+
+FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "..", "frontend")
+app.mount("/", NoCacheStaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
