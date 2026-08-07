@@ -3,7 +3,7 @@
 // the network when available - this only guarantees the UI itself is
 // installable/offline. See idb.js/app.js for the actual offline-capture and
 // sync logic.
-const CACHE = "nb-app-v1";
+const CACHE = "nb-app-v2";
 const SHELL = [
   "./",
   "./index.html",

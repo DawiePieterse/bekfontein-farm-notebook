@@ -280,6 +280,33 @@ async function loadDashboard() {
       `<div class="text-slate-400">No entries yet</div>`;
     bindEntryCards("#recentEntries");
   } catch (e) { /* offline - dashboard just shows whatever was last loaded */ }
+  loadUnusedTags();
+}
+
+async function loadUnusedTags() {
+  const card = document.getElementById("unusedTagsCard");
+  if (!isRecorder()) { card.classList.add("hidden"); return; }
+  let tags;
+  try {
+    tags = await NB.api("/api/tags");
+  } catch (e) { return; } // offline - leave whatever was last shown
+  const unused = tags.filter((t) => t.count === 0);
+  card.classList.toggle("hidden", unused.length === 0);
+  document.getElementById("unusedTagsList").innerHTML = unused.map((t) => `
+    <div class="flex justify-between items-center">
+      <span>${t.name}</span>
+      <button type="button" data-tag="${t.name}" class="delete-tag text-red-600 text-xs font-medium">Remove</button>
+    </div>
+  `).join("");
+  document.querySelectorAll(".delete-tag").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      try {
+        await NB.api(`/api/tags/${encodeURIComponent(btn.dataset.tag)}`, { method: "DELETE" });
+        loadUnusedTags();
+        loadTagSuggestions();
+      } catch (e) { NB.toast("Could not remove tag - try again once online"); }
+    });
+  });
 }
 
 // ---------------------------------------------------------------------
