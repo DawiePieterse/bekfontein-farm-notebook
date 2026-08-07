@@ -30,9 +30,9 @@ Annexe A: [Data Field Reference](#annexe-a-data-field-reference)
   the server itself, not just hidden buttons - even a direct API request
   from the viewer account gets rejected.
 
-Both start with the password `ChangeMe123!`. There is no in-app screen to
-change it yet - see [Changing the default passwords](#changing-the-default-passwords)
-below for how to do it directly.
+Both start with the password `ChangeMe123!` - change it under the
+**Settings** tab the first time you log in (see
+[Changing the default passwords](#changing-the-default-passwords) below).
 
 ### No audio is ever stored
 
@@ -140,20 +140,10 @@ line pointed at port 8001 instead of 8000.
 
 ### Changing the default passwords
 
-There's no in-app screen for this yet. Change each password directly with
-one API call per account (run from the server itself, or any device on the
-same network/tailnet):
-
-```bash
-curl -X POST https://<server-address>/api/auth/change-password \
-  -H "Authorization: Bearer <token from logging in>" \
-  -H "Content-Type: application/json" \
-  -d '{"new_password": "<a real password>"}'
-```
-
-Get `<token from logging in>` by first calling
-`POST /api/auth/login` with `{"username": "andre", "password": "ChangeMe123!"}`
-and copying the `access_token` field from the response. Repeat for `son`.
+Log in as each account and go to the **Settings** tab: enter the current
+password (`ChangeMe123!` the first time) and a new password twice, then
+**Save New Password**. Do this once for `andre` and once for `son` - each
+account only changes its own password while logged in as that account.
 
 Since the app is only reachable at all by devices on the farm's own
 network or the shared Tailscale tailnet, this is a smaller risk than an

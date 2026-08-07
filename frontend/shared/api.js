@@ -7,7 +7,7 @@ const NB = {
   // it's obvious at a glance whether a device's cached copy is actually up
   // to date - especially useful given the service worker's cache-first
   // strategy (see frontend/app/service-worker.js).
-  VERSION: "1.0",
+  VERSION: "1.1",
 
   getToken() { return localStorage.getItem("nb_token"); },
   setToken(t) { localStorage.setItem("nb_token", t); },

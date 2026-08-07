@@ -1,12 +1,17 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordRequestForm
-from sqlmodel import Session, select
+from sqlmodel import Session, SQLModel, select
 
 from db import get_session, pwd_context
 from models import User
 from security import create_access_token, get_current_user, verify_password
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+
+class ChangePasswordIn(SQLModel):
+    current_password: str
+    new_password: str
 
 
 @router.post("/login")
@@ -23,9 +28,11 @@ def login(form: OAuth2PasswordRequestForm = Depends(), session: Session = Depend
 
 
 @router.post("/change-password")
-def change_password(new_password: str, session: Session = Depends(get_session),
+def change_password(payload: ChangePasswordIn, session: Session = Depends(get_session),
                      current: User = Depends(get_current_user)):
-    current.password_hash = pwd_context.hash(new_password)
+    if not verify_password(payload.current_password, current.password_hash):
+        raise HTTPException(401, "Current password is incorrect")
+    current.password_hash = pwd_context.hash(payload.new_password)
     session.add(current)
     session.commit()
     return {"ok": True}

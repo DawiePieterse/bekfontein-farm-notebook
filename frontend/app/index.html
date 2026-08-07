@@ -52,6 +52,7 @@
     <button class="tab-btn" data-tab="capture" id="tabCapture">Capture</button>
     <button class="tab-btn active" data-tab="dashboard">Dashboard</button>
     <button class="tab-btn" data-tab="entries">Entries</button>
+    <button class="tab-btn" data-tab="settings">Settings</button>
   </div>
 
   <div class="p-4 max-w-2xl mx-auto">
@@ -149,6 +150,27 @@
       </div>
       <div id="entriesList" class="space-y-2"></div>
       <div id="entriesEmpty" class="hidden text-center text-slate-400 py-10">No entries yet.</div>
+    </div>
+
+    <!-- SETTINGS -->
+    <div id="page-settings" class="page hidden space-y-4">
+      <div class="bg-white rounded-2xl shadow p-4 space-y-4">
+        <div class="text-lg font-bold">Change Password</div>
+        <div>
+          <label class="text-xs font-medium text-slate-500">Current password</label>
+          <input id="currentPassword" type="password" class="w-full border border-slate-300 rounded-lg p-3 text-lg">
+        </div>
+        <div>
+          <label class="text-xs font-medium text-slate-500">New password</label>
+          <input id="newPassword" type="password" class="w-full border border-slate-300 rounded-lg p-3 text-lg">
+        </div>
+        <div>
+          <label class="text-xs font-medium text-slate-500">Confirm new password</label>
+          <input id="confirmPassword" type="password" class="w-full border border-slate-300 rounded-lg p-3 text-lg">
+        </div>
+        <button id="changePasswordBtn" class="w-full nb-btn-primary rounded-lg py-3 font-bold text-lg">Save New Password</button>
+        <div id="settingsError" class="text-red-600 text-sm hidden"></div>
+      </div>
     </div>
 
   </div>

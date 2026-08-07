@@ -420,6 +420,49 @@ async function archiveCurrentEntry() {
 }
 
 // ---------------------------------------------------------------------
+// Settings
+// ---------------------------------------------------------------------
+async function changePassword() {
+  const currentPassword = document.getElementById("currentPassword").value;
+  const newPassword = document.getElementById("newPassword").value;
+  const confirmPassword = document.getElementById("confirmPassword").value;
+  const errEl = document.getElementById("settingsError");
+  errEl.classList.add("hidden");
+
+  if (!currentPassword || !newPassword) {
+    errEl.textContent = "Fill in both the current and new password.";
+    errEl.classList.remove("hidden");
+    return;
+  }
+  if (newPassword !== confirmPassword) {
+    errEl.textContent = "New password and confirmation don't match.";
+    errEl.classList.remove("hidden");
+    return;
+  }
+  if (newPassword.length < 8) {
+    errEl.textContent = "New password should be at least 8 characters.";
+    errEl.classList.remove("hidden");
+    return;
+  }
+
+  try {
+    await NB.api("/api/auth/change-password", {
+      method: "POST",
+      body: { current_password: currentPassword, new_password: newPassword },
+    });
+    document.getElementById("currentPassword").value = "";
+    document.getElementById("newPassword").value = "";
+    document.getElementById("confirmPassword").value = "";
+    NB.toast("Password changed");
+  } catch (e) {
+    errEl.textContent = String(e.message || e).includes("401")
+      ? "Current password is incorrect."
+      : "Could not change password - check connection and try again.";
+    errEl.classList.remove("hidden");
+  }
+}
+
+// ---------------------------------------------------------------------
 // Init
 // ---------------------------------------------------------------------
 function init() {
@@ -441,6 +484,8 @@ function init() {
   document.getElementById("closeDetailBtn").addEventListener("click", closeDetailModal);
   document.getElementById("editEntryBtn").addEventListener("click", () => currentDetailEntry && editEntry(currentDetailEntry));
   document.getElementById("archiveEntryBtn").addEventListener("click", archiveCurrentEntry);
+
+  document.getElementById("changePasswordBtn").addEventListener("click", changePassword);
 
   setInterval(syncLoop, 10000);
   window.addEventListener("online", syncLoop);
