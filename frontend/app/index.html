@@ -171,6 +171,15 @@
         <button id="changePasswordBtn" class="w-full nb-btn-primary rounded-lg py-3 font-bold text-lg">Save New Password</button>
         <div id="settingsError" class="text-red-600 text-sm hidden"></div>
       </div>
+
+      <div class="bg-white rounded-2xl shadow p-4 space-y-3 hidden" id="backupsCard">
+        <div class="text-lg font-bold">Backups</div>
+        <p class="text-xs text-slate-500">
+          A full backup (database + all photos) is also taken automatically every day at 2am.
+        </p>
+        <button id="backupNowBtn" class="w-full rounded-lg py-3 font-semibold bg-slate-100">Backup Now</button>
+        <div id="backupsList" class="space-y-2 text-sm pt-1"></div>
+      </div>
     </div>
 
   </div>

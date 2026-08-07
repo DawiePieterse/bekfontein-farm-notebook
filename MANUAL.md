@@ -273,20 +273,13 @@ mechanism as the harvest app. This only runs if the server is actually
 running at 02:00; if the PC is off overnight, that night's backup is simply
 skipped.
 
-There is currently no in-app screen for backups (no "Backup Now" button, no
-download list) - backups exist only as files in `data\backups\` on the
-server itself, named like `backup_20260807_020000.zip`. To trigger one
-manually or download one, use the API directly:
-
-```bash
-# Trigger a backup now
-curl -X POST https://<server-address>/api/backups \
-  -H "Authorization: Bearer <andre's token>"
-
-# List backups
-curl https://<server-address>/api/backups \
-  -H "Authorization: Bearer <andre's token>"
-```
+Andre (not `son` - the backup endpoints are recorder-only) can also trigger
+one on demand from the **Settings** tab: the **Backups** card has a
+**Backup Now** button, plus a list of existing backups with a **Download**
+link for each - useful for pulling a copy off the server onto a phone or
+laptop without needing to touch the server itself. On the server, the
+underlying files sit in `data\backups\`, named like
+`backup_20260807_020000.zip`.
 
 **Recommended:** every so often, copy the latest `data\backups\*.zip` file
 off the server entirely (a cloud drive, USB stick, anywhere off that one

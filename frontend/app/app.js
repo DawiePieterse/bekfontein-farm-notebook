@@ -54,6 +54,7 @@ function showPage(name) {
   document.querySelectorAll(".tab-btn").forEach((btn) => btn.classList.toggle("active", btn.dataset.tab === name));
   if (name === "dashboard") loadDashboard();
   if (name === "entries") loadEntries();
+  if (name === "settings") loadBackups();
 }
 
 // ---------------------------------------------------------------------
@@ -463,6 +464,60 @@ async function changePassword() {
 }
 
 // ---------------------------------------------------------------------
+// Backups
+// ---------------------------------------------------------------------
+function formatBytes(bytes) {
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+async function loadBackups() {
+  const card = document.getElementById("backupsCard");
+  if (!isRecorder()) { card.classList.add("hidden"); return; }
+  card.classList.remove("hidden");
+  let backups;
+  try {
+    backups = await NB.api("/api/backups");
+  } catch (e) {
+    document.getElementById("backupsList").innerHTML = `<div class="text-slate-400">Could not load - check connection</div>`;
+    return;
+  }
+  document.getElementById("backupsList").innerHTML = backups.map((b) => `
+    <div class="flex justify-between items-center border-t border-slate-100 pt-2">
+      <div>
+        <div>${new Date(b.created_at).toLocaleString()}</div>
+        <div class="text-xs text-slate-400">${formatBytes(b.size_bytes)}</div>
+      </div>
+      <button type="button" data-filename="${b.filename}" class="download-backup text-blue-700 text-xs font-medium">Download</button>
+    </div>
+  `).join("") || `<div class="text-slate-400">No backups yet</div>`;
+  document.querySelectorAll(".download-backup").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      try {
+        const blob = await NB.api(`/api/backups/${encodeURIComponent(btn.dataset.filename)}/download`);
+        NB.downloadBlob(blob, btn.dataset.filename);
+      } catch (e) { NB.toast("Could not download - try again once online"); }
+    });
+  });
+}
+
+async function triggerBackup() {
+  const btn = document.getElementById("backupNowBtn");
+  btn.disabled = true;
+  btn.textContent = "Backing up...";
+  try {
+    await NB.api("/api/backups", { method: "POST" });
+    NB.toast("Backup created");
+    await loadBackups();
+  } catch (e) {
+    NB.toast("Backup failed - check connection and try again");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Backup Now";
+  }
+}
+
+// ---------------------------------------------------------------------
 // Init
 // ---------------------------------------------------------------------
 function init() {
@@ -486,6 +541,7 @@ function init() {
   document.getElementById("archiveEntryBtn").addEventListener("click", archiveCurrentEntry);
 
   document.getElementById("changePasswordBtn").addEventListener("click", changePassword);
+  document.getElementById("backupNowBtn").addEventListener("click", triggerBackup);
 
   setInterval(syncLoop, 10000);
   window.addEventListener("online", syncLoop);
