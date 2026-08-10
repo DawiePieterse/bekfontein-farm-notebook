@@ -20,6 +20,15 @@ class EntryIn(SQLModel):
     block: str = ""
     tags: List[str] = []
     created_at: Optional[datetime] = None
+    # Captured on the phone at the moment the note was written, not derived
+    # here - see the note on Entry in models.py for why they can't be filled
+    # in at sync time.
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    location_accuracy_m: Optional[float] = None
+    weather_temp: Optional[float] = None
+    weather_humidity: Optional[float] = None
+    weather_condition: str = ""
 
 
 def _get_or_create_tags(session: Session, names: List[str]) -> List[Tag]:
@@ -54,6 +63,12 @@ def _entry_out(session: Session, entry: Entry) -> dict:
         "updated_at": entry.updated_at,
         "created_by": creator.display_name if creator else "",
         "archived": entry.archived,
+        "latitude": entry.latitude,
+        "longitude": entry.longitude,
+        "location_accuracy_m": entry.location_accuracy_m,
+        "weather_temp": entry.weather_temp,
+        "weather_humidity": entry.weather_humidity,
+        "weather_condition": entry.weather_condition,
         "photos": [{"id": p.id, "filename": p.filename, "caption": p.caption} for p in photos],
     }
 
@@ -116,6 +131,11 @@ def upsert_entry(payload: EntryIn, session: Session = Depends(get_session), user
     now = datetime.utcnow()
     existing = session.get(Entry, payload.id)
     if existing:
+        # Where and under what conditions a note was captured describes a
+        # moment that has already happened, so an edit never moves them - a
+        # correction typed at the house that evening must not restamp the note
+        # with the kitchen's coordinates and tonight's weather. They are set
+        # once, when the entry is first created.
         existing.title = payload.title
         existing.body = payload.body
         existing.block = payload.block
@@ -124,7 +144,11 @@ def upsert_entry(payload: EntryIn, session: Session = Depends(get_session), user
         entry = existing
     else:
         entry = Entry(id=payload.id, title=payload.title, body=payload.body, block=payload.block,
-                       created_at=payload.created_at or now, created_by_id=user.id)
+                       created_at=payload.created_at or now, created_by_id=user.id,
+                       latitude=payload.latitude, longitude=payload.longitude,
+                       location_accuracy_m=payload.location_accuracy_m,
+                       weather_temp=payload.weather_temp, weather_humidity=payload.weather_humidity,
+                       weather_condition=payload.weather_condition)
     session.add(entry)
     session.flush()
 

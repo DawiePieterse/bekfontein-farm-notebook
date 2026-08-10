@@ -6,7 +6,7 @@ from fastapi.staticfiles import StaticFiles
 
 from backup import start_backup_scheduler
 from db import PHOTOS_DIR, create_db_and_tables, seed_defaults
-from routers import auth, backups, entries, tags
+from routers import auth, backups, entries, tags, weather
 
 app = FastAPI(title="Bekfontein Farm Notebook")
 
@@ -21,6 +21,7 @@ app.include_router(auth.router)
 app.include_router(entries.router)
 app.include_router(tags.router)
 app.include_router(backups.router)
+app.include_router(weather.router)
 
 
 @app.on_event("startup")

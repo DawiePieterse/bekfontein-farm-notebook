@@ -55,8 +55,23 @@ function sessionExpired() {
 // data loss.
 function handleApiError(e) {
   if (NB.isAuthError(e)) { sessionExpired(); return "auth"; }
-  return NB.isNetworkError(e) ? "offline" : "error";
+  if (NB.isNetworkError(e)) { _lastNetFailAt = Date.now(); return "offline"; }
+  return "error";
 }
+
+// navigator.onLine only reports whether the phone has a radio connection, not
+// whether the farm server can actually be reached - and out in the orchard
+// "WiFi shows connected but nothing answers" is the normal case, not the
+// exception. Remembering the last failure lets the capture screen skip a
+// lookup that is only going to time out, so saving a note stays instant.
+let _lastNetFailAt = 0;
+const OFFLINE_MEMORY_MS = 30000;
+
+function serverLikelyReachable() {
+  return navigator.onLine && (Date.now() - _lastNetFailAt) > OFFLINE_MEMORY_MS;
+}
+
+function noteServerReached() { _lastNetFailAt = 0; }
 
 function showApp() {
   document.getElementById("loginScreen").classList.add("hidden");
@@ -82,6 +97,9 @@ function showPage(name) {
   if (name === "dashboard") loadDashboard();
   if (name === "entries") loadEntries();
   if (name === "settings") loadBackups();
+  // Start hunting for a GPS fix as soon as the capture screen opens, so one is
+  // usually ready by the time he's finished dictating.
+  if (name === "capture") { renderCaptureContext(); requestLocationFix(); }
 }
 
 // ---------------------------------------------------------------------
@@ -185,6 +203,85 @@ async function handlePhotoInput(event) {
 }
 
 // ---------------------------------------------------------------------
+// Where and what the weather was, at the moment of capture
+// ---------------------------------------------------------------------
+// The phone's last known position. A GPS fix can take several seconds and can
+// be refused or unavailable, so it is warmed up when the Capture screen opens
+// and simply used if it's ready at save time. Saving a note NEVER waits on it:
+// Andre is standing in an orchard with a thought he wants recorded, and a note
+// without coordinates is worth far more than a spinner.
+let _lastFix = null;              // {lat, lon, accuracy, at}
+let _locationRefused = false;     // permission denied, or no fix out here
+const FIX_MAX_AGE_MS = 120000;    // older than this and he's likely moved on
+
+function locationSupported() {
+  return "geolocation" in navigator;
+}
+
+function requestLocationFix() {
+  if (!locationSupported()) return;
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      _locationRefused = false;
+      _lastFix = {
+        lat: pos.coords.latitude,
+        lon: pos.coords.longitude,
+        accuracy: pos.coords.accuracy,
+        at: Date.now(),
+      };
+      renderCaptureContext();
+    },
+    () => {
+      // Refused, or simply no fix out here. The note saves without one - say
+      // so plainly rather than leaving "Finding your location..." spinning
+      // forever, which reads like something is still about to happen.
+      _locationRefused = true;
+      renderCaptureContext();
+    },
+    // A long timeout is fine because nothing is waiting on this; enableHighAccuracy
+    // because "which block" is the whole point and a cell-tower fix won't answer it.
+    { enableHighAccuracy: true, timeout: 20000, maximumAge: 60000 }
+  );
+}
+
+function freshFix() {
+  return _lastFix && (Date.now() - _lastFix.at) < FIX_MAX_AGE_MS ? _lastFix : null;
+}
+
+// Conditions where he is, looked up through the farm server. Only attempted
+// when there's a connection: recording the weather at sync time instead would
+// describe the wrong moment entirely, so no reading is the honest answer.
+async function fetchWeatherFor(fix) {
+  if (!fix || !serverLikelyReachable()) return {};
+  try {
+    const weather = await NB.api(`/api/weather/current?lat=${fix.lat}&lon=${fix.lon}`) || {};
+    noteServerReached();
+    return weather;
+  } catch (e) {
+    handleApiError(e);
+    return {};
+  }
+}
+
+// Small line under the capture form telling him what will be stamped on the
+// note, so a missing fix is visible before he saves rather than a surprise
+// afterwards.
+function renderCaptureContext() {
+  const el = document.getElementById("captureContext");
+  if (!el) return;
+  if (!locationSupported()) { el.textContent = "This device can't provide a location."; return; }
+  const fix = freshFix();
+  if (!fix) {
+    el.textContent = _locationRefused
+      ? "No location available - the note will save without one."
+      : "📍 Finding your location...";
+    return;
+  }
+  el.textContent = `📍 Location ready (±${Math.round(fix.accuracy)} m)`
+    + (serverLikelyReachable() ? " · weather will be recorded" : " · offline, no weather reading");
+}
+
+// ---------------------------------------------------------------------
 // Capture form: save (create or edit)
 // ---------------------------------------------------------------------
 function resetCaptureForm() {
@@ -218,6 +315,33 @@ async function saveEntry() {
     created_at: new Date().toISOString(),
     synced: false,
   };
+
+  // Stamp where he is and what it's doing, but only on a NEW note - editing
+  // one later must not move it to wherever he happens to be sitting. The fix
+  // is already in hand (warmed when the screen opened); the weather lookup is
+  // the only thing that can be slow, so it is capped hard and skipped
+  // entirely when offline. A failure here silently leaves the fields blank.
+  if (!editingEntryId) {
+    const fix = freshFix();
+    if (fix) {
+      entry.latitude = fix.lat;
+      entry.longitude = fix.lon;
+      entry.location_accuracy_m = fix.accuracy;
+      // Hard cap: on a good link the server answers from its cache in
+      // milliseconds, and no weather reading is worth making him wait with a
+      // full crate of thoughts and a phone in his hand.
+      const weather = await Promise.race([
+        fetchWeatherFor(fix),
+        new Promise((resolve) => setTimeout(() => resolve({}), 1500)),
+      ]);
+      if (weather && weather.temp !== undefined && weather.temp !== null) {
+        entry.weather_temp = weather.temp;
+        entry.weather_humidity = weather.humidity;
+        entry.weather_condition = weather.condition || "";
+      }
+    }
+  }
+
   await IDB.addEntry(entry);
   for (const p of pendingPhotos) {
     await IDB.addPhoto({ entry_id: id, blob: p.blob, filename: p.filename, synced: false });
@@ -262,8 +386,10 @@ async function syncLoop() {
       try {
         await NB.api("/api/entries", { method: "POST", body: entry });
         await IDB.markEntrySynced(entry.id);
+        noteServerReached();
         pushedSomething = true;
       } catch (e) {
+        if (NB.isNetworkError(e)) _lastNetFailAt = Date.now();
         // A rejected session will reject every retry too - stop the loop and
         // say so, instead of retrying forever behind a screen that still
         // claims to be signed in.
@@ -341,6 +467,7 @@ async function loadDashboard() {
   let offline = false;
   try {
     stats = await NB.api("/api/entries/stats");
+    noteServerReached();
   } catch (e) {
     if (handleApiError(e) === "auth") return;
     offline = true;
@@ -454,6 +581,14 @@ function localEntryAsServerShape(local) {
     id: local.id, title: local.title, body: local.body, block: local.block,
     tags: local.tags || [], created_at: local.created_at, photos: [], archived: false,
     created_by: local.synced ? "" : "(not yet synced)",
+    // Carried through so a note captured out on the farm shows its location
+    // and conditions straight away, not only once it has reached the server.
+    latitude: local.latitude ?? null,
+    longitude: local.longitude ?? null,
+    location_accuracy_m: local.location_accuracy_m ?? null,
+    weather_temp: local.weather_temp ?? null,
+    weather_humidity: local.weather_humidity ?? null,
+    weather_condition: local.weather_condition || "",
   };
 }
 
@@ -479,6 +614,7 @@ async function loadEntries() {
     if (q) qs.set("q", q);
     if (tag) qs.set("tag", tag);
     entries = await NB.api(`/api/entries?${qs.toString()}`);
+    noteServerReached();
   } catch (e) {
     const kind = handleApiError(e);
     if (kind === "auth") return; // already bounced to the login screen
@@ -544,6 +680,7 @@ async function showEntryDetail(id) {
   document.getElementById("detailMeta").textContent =
     `${new Date(entry.created_at).toLocaleString()}${entry.created_by ? " · " + entry.created_by : ""}`;
   document.getElementById("detailBlock").textContent = entry.block ? `📍 ${entry.block}` : "";
+  renderDetailContext(entry);
   document.getElementById("detailTags").innerHTML = entry.tags.map((t) => `<span class="tag-chip">${t}</span>`).join("");
   document.getElementById("detailBody").textContent = entry.body;
   // A locally-held entry's photos haven't been uploaded, so they have no
@@ -554,6 +691,42 @@ async function showEntryDetail(id) {
   document.getElementById("detailActions").classList.toggle("hidden", !isRecorder());
   document.getElementById("detailModal").classList.remove("hidden");
   document.getElementById("detailModal").classList.add("flex");
+}
+
+// Where the note was taken and what it was doing at the time. Both are
+// optional and independent - a note can have a position but no weather (saved
+// out of signal), so each is shown only when it's actually there rather than
+// printing a placeholder that reads like a real reading.
+function renderDetailContext(entry) {
+  const el = document.getElementById("detailContext");
+  if (!el) return;
+  const parts = [];
+
+  if (entry.weather_condition || entry.weather_temp !== null && entry.weather_temp !== undefined) {
+    const icon = NB.weatherIcon(entry.weather_condition);
+    const bits = [];
+    if (entry.weather_temp !== null && entry.weather_temp !== undefined) bits.push(`${Math.round(entry.weather_temp)}°C`);
+    if (entry.weather_condition) bits.push(entry.weather_condition);
+    if (entry.weather_humidity !== null && entry.weather_humidity !== undefined) bits.push(`${entry.weather_humidity}% humidity`);
+    parts.push(`<span><i class="fa-solid ${icon}"></i> ${bits.join(" · ")}</span>`);
+  }
+
+  if (entry.latitude !== null && entry.latitude !== undefined
+      && entry.longitude !== null && entry.longitude !== undefined) {
+    const lat = entry.latitude.toFixed(5);
+    const lon = entry.longitude.toFixed(5);
+    const accuracy = entry.location_accuracy_m
+      ? ` (±${Math.round(entry.location_accuracy_m)} m)` : "";
+    // Opens in whatever map app the phone uses - the practical reason to
+    // record a position at all is being able to walk back to that tree.
+    parts.push(
+      `<a href="https://www.google.com/maps/search/?api=1&query=${lat},${lon}"`
+      + ` target="_blank" rel="noopener" class="text-blue-700 underline">`
+      + `📍 ${lat}, ${lon}</a>${accuracy}`);
+  }
+
+  el.innerHTML = parts.join(" &nbsp;·&nbsp; ");
+  el.classList.toggle("hidden", parts.length === 0);
 }
 
 function closeDetailModal() {

@@ -7,7 +7,7 @@ const NB = {
   // it's obvious at a glance whether a device's cached copy is actually up
   // to date - the service worker revalidates in the background, so a device
   // picks up new code on its second load (see frontend/app/service-worker.js).
-  VERSION: "1.3",
+  VERSION: "1.4",
 
   getToken() { return localStorage.getItem("nb_token"); },
   setToken(t) { localStorage.setItem("nb_token", t); },
@@ -69,6 +69,27 @@ const NB = {
     const contentType = res.headers.get("content-type") || "";
     if (contentType.includes("application/json")) return res.json();
     return res.blob();
+  },
+
+  // Maps backend/weather.py's fixed condition strings to a Font Awesome icon
+  // class - update both places together if a new condition is added.
+  weatherIcon(condition) {
+    const icons = {
+      "Clear": "fa-sun",
+      "Partly Cloudy": "fa-cloud-sun",
+      "Overcast": "fa-cloud",
+      "Cloudy": "fa-cloud",
+      "Foggy": "fa-smog",
+      "Drizzle": "fa-cloud-rain",
+      "Rain": "fa-cloud-rain",
+      "Heavy Rain": "fa-cloud-showers-heavy",
+      "Showers": "fa-cloud-rain",
+      "Heavy Showers": "fa-cloud-showers-heavy",
+      "Snow": "fa-snowflake",
+      "Heavy Snow": "fa-snowflake",
+      "Storm": "fa-bolt",
+    };
+    return icons[condition] || "fa-cloud";
   },
 
   toast(message) {

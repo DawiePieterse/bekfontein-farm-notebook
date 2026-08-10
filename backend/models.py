@@ -45,6 +45,22 @@ class Entry(SQLModel, table=True):
     archived: bool = False  # soft delete - mirrors Worker.active/Block.active.
     # A fat-fingered delete on hard-won farm knowledge must be recoverable.
 
+    # Where Andre was standing when he captured the note, from the phone's own
+    # GPS. Optional throughout: the fix can be refused, unavailable indoors, or
+    # simply not ready yet, and none of that may block saving a note.
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    location_accuracy_m: Optional[float] = None
+
+    # Conditions at that spot at the moment of capture. Only ever filled in
+    # when the phone had a connection at the time - looking it up later would
+    # record the weather when the note synced, which for a note about, say,
+    # sunburn on fruit would be actively misleading. Blank means "not known",
+    # never "nothing to report".
+    weather_temp: Optional[float] = None
+    weather_humidity: Optional[float] = None
+    weather_condition: str = ""
+
 
 class Photo(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)

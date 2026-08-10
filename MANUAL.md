@@ -11,6 +11,7 @@ database. Nothing here talks to that app.
 1. [Overview & Concepts](#1-overview--concepts)
 2. [Initial Server Setup](#2-initial-server-setup)
 3. [Device Setup (iPhone)](#3-device-setup-iphone)
+   - [This app's address](#this-apps-address)
 4. [Using the App](#4-using-the-app)
 5. [How Offline Capture Works](#5-how-offline-capture-works)
 6. [Backups & Restore](#6-backups--restore)
@@ -133,6 +134,24 @@ mapped, and `tailscale serve --https=8443 http://localhost:8001` as an
 alternative if needed.) Find the exact address with `tailscale status` - it
 looks like `https://<server-name>.<tailnet-name>.ts.net/`.
 
+**On this farm's server the harvest app holds the default port, so this app
+lives on `:8443`.** `tailscale serve status` shows both mappings, and the one
+proxying to `http://localhost:8001` is this app:
+
+```
+$ tailscale serve status
+https://<server-name>.<tailnet-name>.ts.net (tailnet only)
+|-- / proxy http://localhost:8000          <- harvest app
+
+https://<server-name>.<tailnet-name>.ts.net:8443 (tailnet only)
+|-- / proxy http://localhost:8001          <- this app
+```
+
+which makes this app's address
+`https://<server-name>.<tailnet-name>.ts.net:8443/app/`, filling in the real
+server and tailnet names from that output - see
+[chapter 3](#this-apps-address).
+
 If Tailscale isn't set up on this server yet, see the harvest app's
 `MANUAL.md` chapter 2, section "Connecting external users with Tailscale" -
 the setup steps are identical, this app just needs its own `tailscale serve`
@@ -165,9 +184,36 @@ Safari's own storage, just invisible from the installed app). Avoid this
 entirely by installing first, then always opening the app from its Home
 Screen icon.
 
+### This app's address
+
+```
+https://<server-name>.<tailnet-name>.ts.net:8443/app/
+```
+
+**Both accounts use this same address** - Andre and his son open the identical
+link and simply sign in with different usernames. There is no separate address
+for the son: the read-only restriction lives on his account and is enforced by
+the server, so a different URL would neither add nor remove anything.
+
+Three parts of that address matter, and getting any of them wrong fails in a
+way that doesn't look like an address problem:
+
+- **`:8443`** - the farm server also runs the harvest app, which holds the
+  default port. `https://<server-name>.<tailnet-name>.ts.net` without the port
+  opens the *harvest* app, not this one.
+- **`/app/`** - without it the server answers 404.
+- **`https`** - a plain `http://192.168.x.x:8001/app/` LAN address still lets
+  him log in, but iOS silently refuses to install it to the Home Screen, run
+  it offline, open the camera, or record a note's location. Everything that
+  makes this app worth carrying into the orchard needs the HTTPS address.
+
+Both mappings are **tailnet only**, so a phone must be signed in to the
+Tailscale network to reach either. If the address ever changes, re-check it on
+the server with `tailscale serve status` - the line proxying to
+`http://localhost:8001` is this app.
+
 **Steps:**
-1. Open the app's HTTPS address (see [Tailscale HTTPS](#tailscale-https-required-for-the-installable-offline-app)
-   above) in Safari on the iPhone.
+1. Open the address above in Safari on the iPhone.
 2. Log in as `andre` (or `son`).
 3. Tap the **Share** icon (square with an arrow) → **"Add to Home Screen"**.
 4. From now on, always open **Bekfontein Farm Notebook** from the Home
@@ -244,6 +290,28 @@ instantly, with or without a signal. A background sync process then:
 4. Retries automatically every ~10 seconds, and immediately whenever the
    phone regains a connection - nothing needs to be triggered manually.
 
+### Location and weather on a note
+
+Opening the **Capture** tab starts the phone looking for a GPS fix, and the
+line above the Save button says whether one is ready. Saving never waits for
+it - if no fix has arrived, the note simply saves without one.
+
+The two behave differently out of signal, and deliberately so:
+
+- **Location** still works. GPS is the phone's own receiver and needs no
+  connection, so a note taken in the furthest block still records where it
+  was taken.
+- **Weather** does not. It is looked up through the farm server at the moment
+  of capture, so with no connection the note keeps its location and leaves the
+  weather blank. It is **not** filled in later when the note syncs: that would
+  record the weather hours after the fact - on a note about sunburn or frost,
+  actively misleading. A blank weather reading means "we don't know", and
+  that is the honest answer.
+
+Tapping the coordinates on a saved note opens them in the phone's map app,
+which is the practical point of recording them - being able to walk back to
+that exact tree next season.
+
 ### The "not yet synced" badge
 
 If anything is still waiting to sync, a small badge appears near the top of
@@ -316,6 +384,27 @@ HTTPS/Tailscale address, not a plain `http://` LAN address opened directly
 in Safari - camera access in an installed PWA needs the secure-context HTTPS
 setup described in [chapter 2](#tailscale-https-required-for-the-installable-offline-app).
 
+**Notes aren't recording a location.** The line above the Save button says
+what the app has: "Finding your location..." means it's still looking, and
+"No location available" means iOS refused or there's no fix. Check, in order:
+
+1. The app was opened from its Home Screen icon on the HTTPS address
+   (`https://<server-name>.<tailnet-name>.ts.net:8443/app/`). On a plain
+   `http://` LAN address iOS blocks location outright and the app can only
+   report that none arrived - the commonest cause, and it looks like a broken
+   feature rather than a wrong address.
+2. Settings → Privacy & Security → Location Services is on, and the app (or
+   Safari) is allowed "While Using".
+3. He's outdoors and has waited a few seconds - a first fix under a shed roof
+   can take a while, or never arrive.
+
+A note always saves regardless; it just saves without coordinates.
+
+**Notes have a location but no weather.** Expected when the note was captured
+out of signal. The weather is read at the moment of capture and deliberately
+not backfilled later, because that would record conditions hours after the
+fact. Blank means "not known".
+
 **Dictation isn't picking up Afrikaans / keeps typing in the wrong
 language.** On the iPhone: Settings → General → Keyboard → Keyboards →
 confirm both the desired language keyboards are added; iOS dictation
@@ -348,6 +437,17 @@ across after the fact; re-enter it from the installed app going forward.
 - `created_by` / `created_at`, `updated_by` / `updated_at`.
 - `archived` - true once soft-deleted; archived entries are hidden from
   search/lists but not erased.
+- `latitude`, `longitude`, `location_accuracy_m` - where the phone was when
+  the note was captured, from its own GPS. Blank if the fix wasn't ready yet
+  or location permission was refused.
+- `weather_temp`, `weather_humidity`, `weather_condition` - the conditions at
+  that spot at that moment. Blank when the note was captured out of signal.
+  Blank always means "not known", never "nothing to report".
+
+Both sets are recorded **once, when the note is first created**, and a later
+edit never changes them: they describe a moment that has already happened, so
+fixing a typo that evening must not restamp the note with the kitchen's
+coordinates and tonight's weather.
 
 ### Tag
 Just a `name` - created automatically the first time anyone uses it on an
