@@ -2,10 +2,10 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "backend",
-      "cwd": "backend",
-      "runtimeExecutable": ".venv/bin/python3",
-      "runtimeArgs": ["run_preview.py"],
+      "name": "notebook",
+      "cwd": ".",
+      "runtimeExecutable": "/tmp/nb_venv/bin/python3",
+      "runtimeArgs": ["/tmp/nb_launcher.py"],
       "port": 8821,
       "autoPort": true
     }

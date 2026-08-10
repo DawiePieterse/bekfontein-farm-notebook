@@ -54,6 +54,15 @@ const IDB = (() => {
       const all = await this.getAllEntries();
       return all.filter((e) => !e.synced);
     },
+    // Called when an entry is archived on the server. The local write-ahead
+    // copy has done its job by then, and leaving it behind means the entry
+    // reappears in the list the next time the device is offline (where the
+    // local store is the only source of truth) and that this store grows
+    // without bound.
+    async deleteEntry(id) {
+      const store = await tx(ENTRIES, "readwrite");
+      store.delete(id);
+    },
     async markEntrySynced(id) {
       const store = await tx(ENTRIES, "readwrite");
       const getReq = store.get(id);

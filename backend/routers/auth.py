@@ -31,7 +31,11 @@ def login(form: OAuth2PasswordRequestForm = Depends(), session: Session = Depend
 def change_password(payload: ChangePasswordIn, session: Session = Depends(get_session),
                      current: User = Depends(get_current_user)):
     if not verify_password(payload.current_password, current.password_hash):
-        raise HTTPException(401, "Current password is incorrect")
+        # 400, not 401: the caller IS authenticated, they just mistyped the
+        # old password. The apps treat a 401 as "this session is dead, sign in
+        # again", so returning one here would throw the user out to the login
+        # screen over a typo.
+        raise HTTPException(400, "Current password is incorrect")
     current.password_hash = pwd_context.hash(payload.new_password)
     session.add(current)
     session.commit()

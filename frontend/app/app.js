@@ -18,6 +18,7 @@ async function login() {
   errEl.classList.add("hidden");
   try {
     await NB.login(username, password);
+    _sessionExpiredShown = false; // fresh session - allow the notice again later
     showApp();
   } catch (e) {
     errEl.textContent = "Invalid username or password";
@@ -29,6 +30,32 @@ function logout() {
   NB.logout();
   document.getElementById("app").classList.add("hidden");
   document.getElementById("loginScreen").classList.remove("hidden");
+}
+
+// The server rejected our token - it expired, or the server was restarted
+// before its signing key was persisted. Say so and send the user back to the
+// login screen. Every screen funnels 401s here rather than swallowing them,
+// because a dead session and a dead network look identical to the caller and
+// only one of them is fixed by waiting.
+let _sessionExpiredShown = false;
+function sessionExpired() {
+  if (_sessionExpiredShown) return; // several screens can 401 in the same tick
+  _sessionExpiredShown = true;
+  NB.logout();
+  document.getElementById("app").classList.add("hidden");
+  const loginScreen = document.getElementById("loginScreen");
+  loginScreen.classList.remove("hidden");
+  const errEl = document.getElementById("loginError");
+  errEl.textContent = "Your session has expired - please sign in again.";
+  errEl.classList.remove("hidden");
+}
+
+// Anything captured on this device is safe in IndexedDB and will sync once
+// the session is valid again, so an expired session must never be reported as
+// data loss.
+function handleApiError(e) {
+  if (NB.isAuthError(e)) { sessionExpired(); return "auth"; }
+  return NB.isNetworkError(e) ? "offline" : "error";
 }
 
 function showApp() {
@@ -71,7 +98,7 @@ async function loadTagSuggestions() {
     filterSelect.innerHTML = `<option value="">All tags</option>` +
       tags.map((t) => `<option value="${t.name}">${t.name} (${t.count})</option>`).join("");
     filterSelect.value = current;
-  } catch (e) { /* offline - keep whatever suggestions were already loaded */ }
+  } catch (e) { handleApiError(e); /* offline - keep the suggestions already loaded */ }
 }
 
 function renderTagChips() {
@@ -227,29 +254,65 @@ async function editEntry(entry) {
 // ---------------------------------------------------------------------
 async function syncLoop() {
   if (!navigator.onLine) return;
+  let pushedSomething = false;
+  let authFailed = false;
   try {
     const unsyncedEntries = await IDB.getUnsyncedEntries();
     for (const entry of unsyncedEntries) {
       try {
         await NB.api("/api/entries", { method: "POST", body: entry });
         await IDB.markEntrySynced(entry.id);
-      } catch (e) { /* leave unsynced, retry next tick */ }
+        pushedSomething = true;
+      } catch (e) {
+        // A rejected session will reject every retry too - stop the loop and
+        // say so, instead of retrying forever behind a screen that still
+        // claims to be signed in.
+        if (NB.isAuthError(e)) { authFailed = true; break; }
+        /* otherwise leave unsynced, retry next tick */
+      }
     }
 
-    const syncedIds = new Set((await IDB.getAllEntries()).filter((e) => e.synced).map((e) => e.id));
-    const unsyncedPhotos = await IDB.getUnsyncedPhotos();
-    for (const photo of unsyncedPhotos) {
-      if (!syncedIds.has(photo.entry_id)) continue; // parent entry not synced yet
-      try {
-        const form = new FormData();
-        form.append("file", photo.blob, photo.filename);
-        await NB.api(`/api/entries/${photo.entry_id}/photos`, { method: "POST", body: form, isForm: true });
-        await IDB.deletePhoto(photo.local_id);
-      } catch (e) { /* leave unsynced, retry next tick */ }
+    if (!authFailed) {
+      const syncedIds = new Set((await IDB.getAllEntries()).filter((e) => e.synced).map((e) => e.id));
+      const unsyncedPhotos = await IDB.getUnsyncedPhotos();
+      for (const photo of unsyncedPhotos) {
+        if (!syncedIds.has(photo.entry_id)) continue; // parent entry not synced yet
+        try {
+          const form = new FormData();
+          form.append("file", photo.blob, photo.filename);
+          await NB.api(`/api/entries/${photo.entry_id}/photos`, { method: "POST", body: form, isForm: true });
+          await IDB.deletePhoto(photo.local_id);
+          pushedSomething = true;
+        } catch (e) {
+          if (NB.isAuthError(e)) { authFailed = true; break; }
+          /* otherwise leave unsynced, retry next tick */
+        }
+      }
     }
   } catch (e) { /* never let a sync failure surface as an error */ }
+
+  if (authFailed) { sessionExpired(); return; }
+
   updateUnsyncedBadge();
   loadTagSuggestions();
+
+  // Anything that just reached the server changes what both screens should be
+  // showing - an entry stops being "(not yet synced)" and starts counting
+  // towards the Dashboard. Redraw whichever screen is actually open, so the
+  // two never disagree just because the sync landed while the user was
+  // looking at one of them.
+  if (pushedSomething) refreshVisiblePage();
+}
+
+function visiblePageName() {
+  const page = [...document.querySelectorAll(".page")].find((p) => !p.classList.contains("hidden"));
+  return page ? page.id.replace(/^page-/, "") : null;
+}
+
+function refreshVisiblePage() {
+  const name = visiblePageName();
+  if (name === "dashboard") loadDashboard();
+  else if (name === "entries") loadEntries();
 }
 
 async function updateUnsyncedBadge() {
@@ -267,21 +330,72 @@ async function updateUnsyncedBadge() {
 // ---------------------------------------------------------------------
 // Dashboard
 // ---------------------------------------------------------------------
+// The Dashboard counts what the server knows about PLUS anything still sitting
+// unsynced on this device. Without the local half the two screens contradict
+// each other - the Entries list has always merged local captures in, so an
+// entry saved out on the farm showed up there while the Dashboard went on
+// reporting "no entries yet", which is exactly what it looks like when work
+// has been lost.
 async function loadDashboard() {
+  let stats = null;
+  let offline = false;
   try {
-    const stats = await NB.api("/api/entries/stats");
-    document.getElementById("statTotal").textContent = stats.total;
-    document.getElementById("statWeek").textContent = stats.this_week;
-    document.getElementById("statPhotos").textContent = stats.with_photos;
-    document.getElementById("statTags").textContent = stats.tags_used;
-    document.getElementById("tagBreakdown").innerHTML = stats.tag_breakdown.map(([name, count]) => `
-      <div class="flex justify-between"><span>${name}</span><span class="text-slate-500">${count}</span></div>
-    `).join("") || `<div class="text-slate-400">No tags used yet</div>`;
-    document.getElementById("recentEntries").innerHTML = stats.recent.map(entryCardHtml).join("") ||
-      `<div class="text-slate-400">No entries yet</div>`;
-    bindEntryCards("#recentEntries");
-  } catch (e) { /* offline - dashboard just shows whatever was last loaded */ }
+    stats = await NB.api("/api/entries/stats");
+  } catch (e) {
+    if (handleApiError(e) === "auth") return;
+    offline = true;
+  }
+
+  // Exactly the rule the Entries list uses, so the two screens can't disagree:
+  // with a server, local means "the unsynced extras on top of it"; without
+  // one, this device's store is the whole notebook.
+  const local = offline
+    ? (await IDB.getAllEntries()).map(localEntryAsServerShape)
+    : await localUnsyncedAsEntries();
+  const merged = mergeStatsWithLocal(stats, local);
+
+  document.getElementById("statTotal").textContent = merged.total;
+  document.getElementById("statWeek").textContent = merged.this_week;
+  document.getElementById("statPhotos").textContent = merged.with_photos;
+  document.getElementById("statTags").textContent = merged.tags_used;
+  document.getElementById("tagBreakdown").innerHTML = merged.tag_breakdown.map(([name, count]) => `
+    <div class="flex justify-between"><span>${name}</span><span class="text-slate-500">${count}</span></div>
+  `).join("") || `<div class="text-slate-400">No tags used yet</div>`;
+  document.getElementById("recentEntries").innerHTML = merged.recent.map(entryCardHtml).join("") ||
+    `<div class="text-slate-400">No entries yet</div>`;
+  bindEntryCards("#recentEntries");
+
   loadUnusedTags();
+}
+
+// Folds this device's unsynced entries into the server's figures. Entries the
+// server already knows about are skipped by id, so an entry that synced
+// between the two reads is never counted twice.
+function mergeStatsWithLocal(stats, localEntries) {
+  const base = stats || {
+    total: 0, this_week: 0, with_photos: 0, tags_used: 0, tag_breakdown: [], recent: [],
+  };
+  if (!localEntries.length) return base;
+
+  const serverIds = new Set((base.recent || []).map((e) => e.id));
+  const extra = localEntries.filter((e) => !serverIds.has(e.id));
+
+  const weekAgo = Date.now() - 7 * 86400000;
+  const tagCounts = new Map(base.tag_breakdown || []);
+  for (const e of extra) {
+    for (const t of e.tags) tagCounts.set(t, (tagCounts.get(t) || 0) + 1);
+  }
+
+  return {
+    total: base.total + extra.length,
+    this_week: base.this_week + extra.filter((e) => new Date(e.created_at).getTime() >= weekAgo).length,
+    with_photos: base.with_photos,
+    tags_used: tagCounts.size,
+    tag_breakdown: [...tagCounts.entries()].sort((a, b) => b[1] - a[1]),
+    recent: [...extra, ...(base.recent || [])]
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+      .slice(0, 5),
+  };
 }
 
 async function loadUnusedTags() {
@@ -290,7 +404,7 @@ async function loadUnusedTags() {
   let tags;
   try {
     tags = await NB.api("/api/tags");
-  } catch (e) { return; } // offline - leave whatever was last shown
+  } catch (e) { handleApiError(e); return; } // offline - leave whatever was last shown
   const unused = tags.filter((t) => t.count === 0);
   card.classList.toggle("hidden", unused.length === 0);
   document.getElementById("unusedTagsList").innerHTML = unused.map((t) => `
@@ -333,6 +447,28 @@ function bindEntryCards(containerSelector) {
   });
 }
 
+// Shapes a locally-stored entry like one from the server, so both screens can
+// render it with the same card markup.
+function localEntryAsServerShape(local) {
+  return {
+    id: local.id, title: local.title, body: local.body, block: local.block,
+    tags: local.tags || [], created_at: local.created_at, photos: [], archived: false,
+    created_by: local.synced ? "" : "(not yet synced)",
+  };
+}
+
+async function localUnsyncedAsEntries() {
+  return (await IDB.getUnsyncedEntries()).map(localEntryAsServerShape);
+}
+
+function matchesFilters(entry, q, tag) {
+  if (tag && !(entry.tags || []).includes(tag)) return false;
+  if (!q) return true;
+  const needle = q.toLowerCase();
+  return [entry.title, entry.body, entry.block]
+    .some((field) => (field || "").toLowerCase().includes(needle));
+}
+
 async function loadEntries() {
   const q = document.getElementById("searchInput").value.trim();
   const tag = document.getElementById("tagFilter").value;
@@ -344,29 +480,39 @@ async function loadEntries() {
     if (tag) qs.set("tag", tag);
     entries = await NB.api(`/api/entries?${qs.toString()}`);
   } catch (e) {
+    const kind = handleApiError(e);
+    if (kind === "auth") return; // already bounced to the login screen
     offline = true;
   }
 
-  // Merge in anything captured on this device that hasn't synced yet, so it
-  // doesn't look like it vanished just because the server hasn't seen it.
-  const localUnsynced = await IDB.getUnsyncedEntries();
-  const serverIds = new Set(entries.map((e) => e.id));
-  for (const local of localUnsynced) {
-    if (!serverIds.has(local.id)) {
-      entries.unshift({
-        id: local.id, title: local.title, body: local.body, block: local.block,
-        tags: local.tags, created_at: local.created_at, photos: [], archived: false,
-        created_by: "(not yet synced)",
-      });
+  // An unfiltered listing from the server is a complete picture of what still
+  // exists, so any entry this device has already synced but the server no
+  // longer returns has been archived - drop the local copy. Without this it
+  // would rise from the dead every time the device went offline, and the
+  // store would grow for the life of the device. Skipped when a search or tag
+  // filter is on, where "missing from the results" only means "filtered out".
+  if (!offline && !q && !tag) {
+    const liveIds = new Set(entries.map((e) => e.id));
+    for (const local of await IDB.getAllEntries()) {
+      if (local.synced && !liveIds.has(local.id)) await IDB.deleteEntry(local.id);
     }
   }
-  if (offline && entries.length === 0) {
-    entries = (await IDB.getAllEntries()).map((local) => ({
-      id: local.id, title: local.title, body: local.body, block: local.block,
-      tags: local.tags, created_at: local.created_at, photos: [], archived: false,
-      created_by: local.synced ? "" : "(not yet synced)",
-    }));
+
+  // With no server, everything this device holds is the whole truth - synced
+  // entries included. Previously the local copy was only consulted when the
+  // merged list came out empty, so a single unsynced capture made every
+  // already-synced entry disappear from the list until the signal came back.
+  const local = offline
+    ? (await IDB.getAllEntries()).map(localEntryAsServerShape)
+    : await localUnsyncedAsEntries();
+
+  // Local records never went through the server's filtering, so apply the
+  // same search and tag filter here or they'd ignore it.
+  const serverIds = new Set(entries.map((e) => e.id));
+  for (const entry of local) {
+    if (!serverIds.has(entry.id) && matchesFilters(entry, q, tag)) entries.push(entry);
   }
+  entries.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
   document.getElementById("entriesList").innerHTML = entries.map(entryCardHtml).join("");
   document.getElementById("entriesEmpty").classList.toggle("hidden", entries.length > 0);
@@ -383,8 +529,15 @@ async function showEntryDetail(id) {
   try {
     entry = await NB.api(`/api/entries/${id}`);
   } catch (e) {
-    NB.toast("Could not load entry - check connection");
-    return;
+    if (handleApiError(e) === "auth") return;
+    // The server hasn't got this one yet (or can't be reached), but if it was
+    // captured on this device we can still show it. Opening an entry you can
+    // see listed must never dead-end on "check connection".
+    const local = (await IDB.getAllEntries()).find((l) => l.id === id);
+    if (!local) { NB.toast("Could not load entry - check connection"); return; }
+    entry = localEntryAsServerShape(local);
+    const photos = await IDB.getPhotosForEntry(id);
+    entry.localPhotoUrls = photos.map((p) => URL.createObjectURL(p.blob));
   }
   currentDetailEntry = entry;
   document.getElementById("detailTitle").textContent = entry.title || "(untitled)";
@@ -393,8 +546,11 @@ async function showEntryDetail(id) {
   document.getElementById("detailBlock").textContent = entry.block ? `📍 ${entry.block}` : "";
   document.getElementById("detailTags").innerHTML = entry.tags.map((t) => `<span class="tag-chip">${t}</span>`).join("");
   document.getElementById("detailBody").textContent = entry.body;
-  document.getElementById("detailPhotos").innerHTML = entry.photos.map((p) =>
-    `<img src="/photos/${p.filename}" class="w-full rounded-lg border">`).join("");
+  // A locally-held entry's photos haven't been uploaded, so they have no
+  // server filename yet - render them straight from the stored Blob.
+  document.getElementById("detailPhotos").innerHTML = entry.localPhotoUrls
+    ? entry.localPhotoUrls.map((url) => `<img src="${url}" class="w-full rounded-lg border">`).join("")
+    : entry.photos.map((p) => `<img src="/photos/${p.filename}" class="w-full rounded-lg border">`).join("");
   document.getElementById("detailActions").classList.toggle("hidden", !isRecorder());
   document.getElementById("detailModal").classList.remove("hidden");
   document.getElementById("detailModal").classList.add("flex");
@@ -409,15 +565,22 @@ function closeDetailModal() {
 async function archiveCurrentEntry() {
   if (!currentDetailEntry) return;
   if (!confirm(`Archive "${currentDetailEntry.title || "this entry"}"? It can be restored later if needed.`)) return;
+  const entryId = currentDetailEntry.id;
   try {
-    await NB.api(`/api/entries/${currentDetailEntry.id}`, { method: "DELETE" });
-    NB.toast("Entry archived");
-    closeDetailModal();
-    loadEntries();
-    loadDashboard();
+    await NB.api(`/api/entries/${entryId}`, { method: "DELETE" });
   } catch (e) {
+    if (handleApiError(e) === "auth") return;
     NB.toast("Could not archive - check connection");
+    return;
   }
+  // Drop this device's copy too, so the entry doesn't come back the next time
+  // the app runs offline and reads the local store.
+  await IDB.deleteEntry(entryId);
+  NB.toast("Entry archived");
+  closeDetailModal();
+  updateUnsyncedBadge();
+  loadEntries();
+  loadDashboard();
 }
 
 // ---------------------------------------------------------------------
@@ -456,7 +619,8 @@ async function changePassword() {
     document.getElementById("confirmPassword").value = "";
     NB.toast("Password changed");
   } catch (e) {
-    errEl.textContent = String(e.message || e).includes("401")
+    if (handleApiError(e) === "auth") return; // session died, not a bad password
+    errEl.textContent = String(e.message || e).startsWith("400")
       ? "Current password is incorrect."
       : "Could not change password - check connection and try again.";
     errEl.classList.remove("hidden");
@@ -479,6 +643,7 @@ async function loadBackups() {
   try {
     backups = await NB.api("/api/backups");
   } catch (e) {
+    if (handleApiError(e) === "auth") return;
     document.getElementById("backupsList").innerHTML = `<div class="text-slate-400">Could not load - check connection</div>`;
     return;
   }

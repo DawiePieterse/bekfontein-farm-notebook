@@ -5,9 +5,9 @@ const API_BASE = "";
 const NB = {
   // Bump on every deploy that touches frontend code. Shown in the header so
   // it's obvious at a glance whether a device's cached copy is actually up
-  // to date - especially useful given the service worker's cache-first
-  // strategy (see frontend/app/service-worker.js).
-  VERSION: "1.2",
+  // to date - the service worker revalidates in the background, so a device
+  // picks up new code on its second load (see frontend/app/service-worker.js).
+  VERSION: "1.3",
 
   getToken() { return localStorage.getItem("nb_token"); },
   setToken(t) { localStorage.setItem("nb_token", t); },
@@ -34,6 +34,22 @@ const NB = {
     NB.clearToken();
     localStorage.removeItem("nb_role");
     localStorage.removeItem("nb_display_name");
+  },
+
+  // True when the request never reached the server (offline, unreachable).
+  // fetch() rejects with a TypeError for those.
+  isNetworkError(e) {
+    return e instanceof TypeError || (!!e && (e.name === "AbortError" || e.name === "TimeoutError"));
+  },
+
+  // True when the server actively rejected the session - the token is missing,
+  // expired, or was signed with a key the server no longer has. api() puts the
+  // status code at the front of the error message. This has to be told apart
+  // from a network failure: treating a dead session as "offline" leaves the
+  // user looking at empty screens forever with no hint that logging in again
+  // would fix it.
+  isAuthError(e) {
+    return parseInt(String(e && e.message).slice(0, 3), 10) === 401;
   },
 
   async api(path, { method = "GET", body, isForm = false } = {}) {
