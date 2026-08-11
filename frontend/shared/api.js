@@ -7,7 +7,7 @@ const NB = {
   // it's obvious at a glance whether a device's cached copy is actually up
   // to date - the service worker revalidates in the background, so a device
   // picks up new code on its second load (see frontend/app/service-worker.js).
-  VERSION: "1.4",
+  VERSION: "1.5",
 
   getToken() { return localStorage.getItem("nb_token"); },
   setToken(t) { localStorage.setItem("nb_token", t); },
@@ -18,6 +18,9 @@ const NB = {
 
   getDisplayName() { return localStorage.getItem("nb_display_name") || ""; },
   setDisplayName(n) { localStorage.setItem("nb_display_name", n); },
+
+  getGpsEnabled() { return localStorage.getItem("nb_gps_enabled") !== "off"; },
+  setGpsEnabled(enabled) { localStorage.setItem("nb_gps_enabled", enabled ? "on" : "off"); },
 
   async login(username, password) {
     const body = new URLSearchParams({ username, password });

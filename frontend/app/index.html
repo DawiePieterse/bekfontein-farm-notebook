@@ -70,6 +70,14 @@
         <div>
           <label class="text-xs font-medium text-slate-500">Block / Location (optional)</label>
           <input id="entryBlock" class="w-full border border-slate-300 rounded-lg p-2" placeholder="e.g. Block 4 North, or near the pump station">
+          <div class="flex items-center justify-between mt-2">
+            <label for="gpsToggle" class="text-xs font-medium text-slate-500">Record GPS location</label>
+            <label class="nb-switch">
+              <input type="checkbox" id="gpsToggle">
+              <span class="nb-switch-track"></span>
+            </label>
+          </div>
+          <p id="captureContext" class="text-[11px] text-slate-400 mt-1"></p>
         </div>
 
         <div>
@@ -92,8 +100,6 @@
             <input id="photoInput" type="file" accept="image/*" capture="environment" class="hidden">
           </label>
         </div>
-
-        <p id="captureContext" class="text-[11px] text-slate-400"></p>
 
         <div class="flex gap-2 pt-2">
           <button id="cancelEditBtn" class="hidden flex-1 rounded-lg py-3 bg-slate-100">Cancel</button>

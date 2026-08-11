@@ -99,7 +99,11 @@ function showPage(name) {
   if (name === "settings") loadBackups();
   // Start hunting for a GPS fix as soon as the capture screen opens, so one is
   // usually ready by the time he's finished dictating.
-  if (name === "capture") { renderCaptureContext(); requestLocationFix(); }
+  if (name === "capture") {
+    document.getElementById("gpsToggle").checked = NB.getGpsEnabled();
+    renderCaptureContext();
+    requestLocationFix();
+  }
 }
 
 // ---------------------------------------------------------------------
@@ -219,7 +223,7 @@ function locationSupported() {
 }
 
 function requestLocationFix() {
-  if (!locationSupported()) return;
+  if (!locationSupported() || !NB.getGpsEnabled()) return;
   navigator.geolocation.getCurrentPosition(
     (pos) => {
       _locationRefused = false;
@@ -269,6 +273,7 @@ async function fetchWeatherFor(fix) {
 function renderCaptureContext() {
   const el = document.getElementById("captureContext");
   if (!el) return;
+  if (!NB.getGpsEnabled()) { el.textContent = "GPS location is off - the note will save without one."; return; }
   if (!locationSupported()) { el.textContent = "This device can't provide a location."; return; }
   const fix = freshFix();
   if (!fix) {
@@ -868,6 +873,17 @@ function init() {
     if (e.key === "Enter") { e.preventDefault(); addTagFromInput(); }
   });
   document.getElementById("photoInput").addEventListener("change", handlePhotoInput);
+  document.getElementById("gpsToggle").addEventListener("change", (e) => {
+    NB.setGpsEnabled(e.target.checked);
+    if (e.target.checked) {
+      _locationRefused = false;
+      requestLocationFix();
+    } else {
+      _lastFix = null;
+      _locationRefused = false;
+    }
+    renderCaptureContext();
+  });
   document.getElementById("saveEntryBtn").addEventListener("click", saveEntry);
   document.getElementById("cancelEditBtn").addEventListener("click", resetCaptureForm);
 
