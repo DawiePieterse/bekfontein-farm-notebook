@@ -18,7 +18,7 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 DEFAULT_RECORDER_USERNAME = "andre"
 DEFAULT_RECORDER_PASSWORD = "ChangeMe123!"  # must be changed on first login
-DEFAULT_VIEWER_USERNAME = "son"
+DEFAULT_VIEWER_USERNAME = "devin"
 DEFAULT_VIEWER_PASSWORD = "ChangeMe123!"  # must be changed on first login
 
 # Starter tag suggestions so Andre isn't starting from a completely blank
@@ -91,7 +91,7 @@ def seed_defaults() -> None:
                 username=DEFAULT_VIEWER_USERNAME,
                 password_hash=pwd_context.hash(DEFAULT_VIEWER_PASSWORD),
                 role=UserRole.viewer,
-                display_name="Son",
+                display_name="Devin",
             ))
 
         if not session.exec(select(Tag)).first():

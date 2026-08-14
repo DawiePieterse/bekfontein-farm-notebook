@@ -26,7 +26,7 @@ Annexe A: [Data Field Reference](#annexe-a-data-field-reference)
 ### The two accounts
 
 - **andre** (role: *recorder*) - can create, edit, and archive entries.
-- **son** (role: *viewer*) - can browse and search everything Andre has
+- **devin** (role: *viewer*) - can browse and search everything Andre has
   recorded, but can't create, edit, or delete anything. This is enforced by
   the server itself, not just hidden buttons - even a direct API request
   from the viewer account gets rejected.
@@ -161,7 +161,7 @@ line pointed at port 8001 instead of 8000.
 
 Log in as each account and go to the **Settings** tab: enter the current
 password (`ChangeMe123!` the first time) and a new password twice, then
-**Save New Password**. Do this once for `andre` and once for `son` - each
+**Save New Password**. Do this once for `andre` and once for `devin` - each
 account only changes its own password while logged in as that account.
 
 Since the app is only reachable at all by devices on the farm's own
@@ -214,7 +214,7 @@ the server with `tailscale serve status` - the line proxying to
 
 **Steps:**
 1. Open the address above in Safari on the iPhone.
-2. Log in as `andre` (or `son`).
+2. Log in as `andre` (or `devin`).
 3. Tap the **Share** icon (square with an arrow) → **"Add to Home Screen"**.
 4. From now on, always open **Bekfontein Farm Notebook** from the Home
    Screen icon, not from a Safari bookmark or tab.
@@ -341,7 +341,7 @@ mechanism as the harvest app. This only runs if the server is actually
 running at 02:00; if the PC is off overnight, that night's backup is simply
 skipped.
 
-Andre (not `son` - the backup endpoints are recorder-only) can also trigger
+Andre (not `devin` - the backup endpoints are recorder-only) can also trigger
 one on demand from the **Settings** tab: the **Backups** card has a
 **Backup Now** button, plus a list of existing backups with a **Download**
 link for each - useful for pulling a copy off the server onto a phone or
