@@ -1,4 +1,5 @@
 import os
+import re
 import uuid as uuid_lib
 from datetime import datetime, timedelta
 from typing import List, Optional
@@ -29,6 +30,18 @@ class EntryIn(SQLModel):
     weather_temp: Optional[float] = None
     weather_humidity: Optional[float] = None
     weather_condition: str = ""
+
+
+# The id arrives from the phone, and it also becomes part of the photo
+# filename on disk - so it has to be something that can't walk out of the
+# photos directory or turn into an entry no URL can address. The app always
+# sends a UUID; this just refuses everything that isn't shaped like one.
+_ID_RE = re.compile(r"\A[A-Za-z0-9_-]{1,64}\Z")
+
+
+def _validate_entry_id(entry_id: str) -> None:
+    if not _ID_RE.match(entry_id or ""):
+        raise HTTPException(400, "Invalid entry id")
 
 
 def _get_or_create_tags(session: Session, names: List[str]) -> List[Tag]:
@@ -128,6 +141,7 @@ def upsert_entry(payload: EntryIn, session: Session = Depends(get_session), user
     id), matching the harvest app's upsert_worker/upsert_team/upsert_block
     convention. Idempotent: a retried sync POST for the same id just
     overwrites with the same data, safe on flaky rural signal."""
+    _validate_entry_id(payload.id)
     now = datetime.utcnow()
     existing = session.get(Entry, payload.id)
     if existing:
@@ -174,6 +188,7 @@ def archive_entry(entry_id: str, session: Session = Depends(get_session), user: 
 @router.post("/{entry_id}/photos")
 async def upload_photo(entry_id: str, file: UploadFile, caption: str = "",
                         session: Session = Depends(get_session), user: User = Depends(require_recorder)):
+    _validate_entry_id(entry_id)
     entry = session.get(Entry, entry_id)
     if not entry:
         raise HTTPException(404, "Entry not found")

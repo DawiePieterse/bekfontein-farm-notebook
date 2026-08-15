@@ -4,7 +4,12 @@ let currentTags = [];
 let pendingPhotos = [];   // [{tempId, blob, filename}] - newly added, not yet synced
 let existingPhotos = [];  // [{id, filename}] - already on the server (edit mode only)
 let editingEntryId = null;
+let editingCreatedAt = null;  // the entry's original capture time, preserved across an edit
 let allTagNames = [];
+
+// Short alias - this wraps every note-derived value that gets interpolated
+// into an HTML string below. See NB.escapeHtml in shared/api.js.
+const esc = (v) => NB.escapeHtml(v);
 
 function isRecorder() { return NB.getRole() === "recorder"; }
 
@@ -114,18 +119,18 @@ async function loadTagSuggestions() {
     const tags = await NB.api("/api/tags");
     allTagNames = tags.map((t) => t.name);
     document.getElementById("tagSuggestions").innerHTML =
-      allTagNames.map((n) => `<option value="${n}">`).join("");
+      allTagNames.map((n) => `<option value="${esc(n)}">`).join("");
     const filterSelect = document.getElementById("tagFilter");
     const current = filterSelect.value;
     filterSelect.innerHTML = `<option value="">All tags</option>` +
-      tags.map((t) => `<option value="${t.name}">${t.name} (${t.count})</option>`).join("");
+      tags.map((t) => `<option value="${esc(t.name)}">${esc(t.name)} (${t.count})</option>`).join("");
     filterSelect.value = current;
   } catch (e) { handleApiError(e); /* offline - keep the suggestions already loaded */ }
 }
 
 function renderTagChips() {
   document.getElementById("tagChips").innerHTML = currentTags.map((t, i) => `
-    <span class="tag-chip">${t} <button type="button" data-i="${i}" class="remove-tag">&times;</button></span>
+    <span class="tag-chip">${esc(t)} <button type="button" data-i="${i}" class="remove-tag">&times;</button></span>
   `).join("");
   document.querySelectorAll(".remove-tag").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -151,6 +156,11 @@ function addTagFromInput() {
 function downscaleImage(file, maxDim = 1600, quality = 0.8) {
   return new Promise((resolve) => {
     const img = new Image();
+    // Released as soon as the bitmap is decoded - a capture session can add a
+    // lot of photos, and each of these otherwise pins its full-size original
+    // in memory for the life of the page.
+    const src = URL.createObjectURL(file);
+    const done = (result) => { URL.revokeObjectURL(src); resolve(result); };
     img.onload = () => {
       let { width, height } = img;
       if (width > maxDim || height > maxDim) {
@@ -162,17 +172,17 @@ function downscaleImage(file, maxDim = 1600, quality = 0.8) {
       canvas.width = width;
       canvas.height = height;
       canvas.getContext("2d").drawImage(img, 0, 0, width, height);
-      canvas.toBlob((blob) => resolve(blob || file), "image/jpeg", quality);
+      canvas.toBlob((blob) => done(blob || file), "image/jpeg", quality);
     };
-    img.onerror = () => resolve(file);
-    img.src = URL.createObjectURL(file);
+    img.onerror = () => done(file);
+    img.src = src;
   });
 }
 
 function renderPhotoThumbs() {
   const existing = existingPhotos.map((p) => `
     <div class="relative">
-      <img src="/photos/${p.filename}" class="w-20 h-20 object-cover rounded-lg border">
+      <img src="/photos/${encodeURIComponent(p.filename)}" class="w-20 h-20 object-cover rounded-lg border">
       <button type="button" data-existing="${p.id}" class="remove-photo absolute -top-2 -right-2 bg-white rounded-full w-6 h-6 shadow text-red-600 text-xs">&times;</button>
     </div>`).join("");
   const pending = pendingPhotos.map((p) => `
@@ -298,6 +308,7 @@ function resetCaptureForm() {
   pendingPhotos = [];
   existingPhotos = [];
   editingEntryId = null;
+  editingCreatedAt = null;
   document.getElementById("captureFormTitle").textContent = "New Entry";
   document.getElementById("cancelEditBtn").classList.add("hidden");
   renderTagChips();
@@ -317,7 +328,11 @@ async function saveEntry() {
     body,
     block: document.getElementById("entryBlock").value.trim(),
     tags: currentTags,
-    created_at: new Date().toISOString(),
+    // When this note was WRITTEN, which an edit never changes. Stamping "now"
+    // here made a corrected note jump to the top of the list and count as
+    // captured today for as long as it sat unsynced - the server ignores the
+    // field on an edit, so the two disagreed until the sync landed.
+    created_at: editingCreatedAt || new Date().toISOString(),
     synced: false,
   };
 
@@ -362,6 +377,7 @@ async function saveEntry() {
 
 async function editEntry(entry) {
   editingEntryId = entry.id;
+  editingCreatedAt = entry.created_at;
   document.getElementById("entryTitle").value = entry.title;
   document.getElementById("entryBlock").value = entry.block || "";
   document.getElementById("entryBody").value = entry.body;
@@ -491,7 +507,7 @@ async function loadDashboard() {
   document.getElementById("statPhotos").textContent = merged.with_photos;
   document.getElementById("statTags").textContent = merged.tags_used;
   document.getElementById("tagBreakdown").innerHTML = merged.tag_breakdown.map(([name, count]) => `
-    <div class="flex justify-between"><span>${name}</span><span class="text-slate-500">${count}</span></div>
+    <div class="flex justify-between"><span>${esc(name)}</span><span class="text-slate-500">${count}</span></div>
   `).join("") || `<div class="text-slate-400">No tags used yet</div>`;
   document.getElementById("recentEntries").innerHTML = merged.recent.map(entryCardHtml).join("") ||
     `<div class="text-slate-400">No entries yet</div>`;
@@ -541,8 +557,8 @@ async function loadUnusedTags() {
   card.classList.toggle("hidden", unused.length === 0);
   document.getElementById("unusedTagsList").innerHTML = unused.map((t) => `
     <div class="flex justify-between items-center">
-      <span>${t.name}</span>
-      <button type="button" data-tag="${t.name}" class="delete-tag text-red-600 text-xs font-medium">Remove</button>
+      <span>${esc(t.name)}</span>
+      <button type="button" data-tag="${esc(t.name)}" class="delete-tag text-red-600 text-xs font-medium">Remove</button>
     </div>
   `).join("");
   document.querySelectorAll(".delete-tag").forEach((btn) => {
@@ -560,14 +576,15 @@ async function loadUnusedTags() {
 // Entries list
 // ---------------------------------------------------------------------
 function entryCardHtml(e) {
-  const photoThumb = e.photos.length ? `<img src="/photos/${e.photos[0].filename}" class="w-12 h-12 object-cover rounded-lg">` : "";
-  const tags = e.tags.map((t) => `<span class="tag-chip">${t}</span>`).join(" ");
+  const photoThumb = e.photos.length
+    ? `<img src="/photos/${encodeURIComponent(e.photos[0].filename)}" class="w-12 h-12 object-cover rounded-lg">` : "";
+  const tags = e.tags.map((t) => `<span class="tag-chip">${esc(t)}</span>`).join(" ");
   return `
-    <button data-id="${e.id}" class="entry-card w-full text-left bg-white rounded-xl shadow p-3 flex gap-3 items-start">
+    <button data-id="${esc(e.id)}" class="entry-card w-full text-left bg-white rounded-xl shadow p-3 flex gap-3 items-start">
       ${photoThumb}
       <div class="flex-1 min-w-0">
-        <div class="font-semibold text-sm truncate">${e.title || "(untitled)"}</div>
-        <div class="text-xs text-slate-500">${e.block ? e.block + " · " : ""}${new Date(e.created_at).toLocaleDateString()}</div>
+        <div class="font-semibold text-sm truncate">${esc(e.title) || "(untitled)"}</div>
+        <div class="text-xs text-slate-500">${e.block ? esc(e.block) + " · " : ""}${new Date(e.created_at).toLocaleDateString()}</div>
         <div class="mt-1 flex flex-wrap gap-1">${tags}</div>
       </div>
     </button>`;
@@ -686,13 +703,13 @@ async function showEntryDetail(id) {
     `${new Date(entry.created_at).toLocaleString()}${entry.created_by ? " · " + entry.created_by : ""}`;
   document.getElementById("detailBlock").textContent = entry.block ? `📍 ${entry.block}` : "";
   renderDetailContext(entry);
-  document.getElementById("detailTags").innerHTML = entry.tags.map((t) => `<span class="tag-chip">${t}</span>`).join("");
+  document.getElementById("detailTags").innerHTML = entry.tags.map((t) => `<span class="tag-chip">${esc(t)}</span>`).join("");
   document.getElementById("detailBody").textContent = entry.body;
   // A locally-held entry's photos haven't been uploaded, so they have no
   // server filename yet - render them straight from the stored Blob.
   document.getElementById("detailPhotos").innerHTML = entry.localPhotoUrls
-    ? entry.localPhotoUrls.map((url) => `<img src="${url}" class="w-full rounded-lg border">`).join("")
-    : entry.photos.map((p) => `<img src="/photos/${p.filename}" class="w-full rounded-lg border">`).join("");
+    ? entry.localPhotoUrls.map((url) => `<img src="${esc(url)}" class="w-full rounded-lg border">`).join("")
+    : entry.photos.map((p) => `<img src="/photos/${encodeURIComponent(p.filename)}" class="w-full rounded-lg border">`).join("");
   document.getElementById("detailActions").classList.toggle("hidden", !isRecorder());
   document.getElementById("detailModal").classList.remove("hidden");
   document.getElementById("detailModal").classList.add("flex");
@@ -831,7 +848,7 @@ async function loadBackups() {
         <div>${new Date(b.created_at).toLocaleString()}</div>
         <div class="text-xs text-slate-400">${formatBytes(b.size_bytes)}</div>
       </div>
-      <button type="button" data-filename="${b.filename}" class="download-backup text-blue-700 text-xs font-medium">Download</button>
+      <button type="button" data-filename="${esc(b.filename)}" class="download-backup text-blue-700 text-xs font-medium">Download</button>
     </div>
   `).join("") || `<div class="text-slate-400">No backups yet</div>`;
   document.querySelectorAll(".download-backup").forEach((btn) => {

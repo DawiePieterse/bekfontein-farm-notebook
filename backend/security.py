@@ -54,7 +54,14 @@ bearer_scheme = HTTPBearer(auto_error=False)
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return pwd_context.verify(plain, hashed)
+    try:
+        return pwd_context.verify(plain, hashed)
+    except Exception:
+        # An unreadable stored hash (hand-edited row, half-finished restore)
+        # otherwise escapes as a 500 with a stack trace on the login screen.
+        # It isn't a valid password either way, so answer it like any other
+        # wrong one and let the normal "Invalid username or password" show.
+        return False
 
 
 def create_access_token(username: str) -> str:

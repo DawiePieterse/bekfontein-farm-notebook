@@ -8,6 +8,12 @@ from security import create_access_token, get_current_user, verify_password
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
+# Matches the check the Settings screen makes. Enforced here as well because
+# the screen's version can be bypassed by anything that talks to the API
+# directly, and a one-character password on the account that holds every note
+# on the farm shouldn't come down to which client was used to set it.
+MIN_PASSWORD_LENGTH = 8
+
 
 class ChangePasswordIn(SQLModel):
     current_password: str
@@ -36,6 +42,8 @@ def change_password(payload: ChangePasswordIn, session: Session = Depends(get_se
         # again", so returning one here would throw the user out to the login
         # screen over a typo.
         raise HTTPException(400, "Current password is incorrect")
+    if len(payload.new_password) < MIN_PASSWORD_LENGTH:
+        raise HTTPException(400, f"New password must be at least {MIN_PASSWORD_LENGTH} characters")
     current.password_hash = pwd_context.hash(payload.new_password)
     session.add(current)
     session.commit()

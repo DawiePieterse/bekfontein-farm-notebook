@@ -1,0 +1,76 @@
+/*!
+ * Font Awesome Free 6.5.1 - subset, vendored for offline use.
+ * https://fontawesome.com
+ * Icons: CC BY 4.0 · Fonts: SIL OFL 1.1 · Code: MIT
+ * Copyright 2024 Fonticons, Inc.
+ *
+ * WHY THIS FILE EXISTS
+ * The app used to pull Font Awesome from cdnjs. The farm's phones are on the
+ * tailnet and have no route to the public internet, so out in the orchard that
+ * stylesheet never arrived and every icon rendered at zero size - which is how
+ * the entry detail modal ended up with a close button that could not be seen
+ * or tapped. A PWA whose whole point is working with no signal cannot depend
+ * on a CDN, so the font is served from the farm server like everything else.
+ *
+ * WHY IT IS SO SMALL
+ * This is not all of Font Awesome. The .woff2 beside this file has been
+ * subset to exactly the 11 glyphs the notebook actually draws - 1.8 KB
+ * instead of 156 KB, which matters on a phone syncing over rural signal.
+ *
+ * ADDING AN ICON
+ * Adding a class here is not enough: the glyph has to be in the font file
+ * too, and it won't be. Re-subset from the upstream fa-solid-900.woff2 with
+ * the full codepoint list (see the @font-face src comment below), then add
+ * the matching rule here. If an icon ever renders as a blank box, this is
+ * why. The weather icon names are also mirrored in shared/api.js.
+ */
+
+@font-face {
+  font-family: "Font Awesome 6 Free";
+  font-style: normal;
+  font-weight: 900;
+  font-display: block;
+  /* Subset of Font Awesome Free 6.5.1 fa-solid-900.woff2, generated with:
+     pyftsubset fa-solid-900.woff2 --flavor=woff2 --output-file=fa-solid-900-subset.woff2 \
+       --unicodes=U+F185,U+F6C4,U+F0C2,U+F73D,U+F740,U+F75F,U+F2DC,U+F0E7,U+F2F5,U+F030,U+F0C7 */
+  src: url("fa-solid-900-subset.woff2") format("woff2");
+}
+
+.fa-solid,
+.fa {
+  font-family: "Font Awesome 6 Free";
+  font-weight: 900;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-font-smoothing: antialiased;
+  display: inline-block;
+  font-style: normal;
+  font-variant: normal;
+  line-height: 1;
+  text-rendering: auto;
+}
+
+.fa-solid::before,
+.fa::before {
+  /* Keeps the glyph on its own font even if the surrounding element
+     inherits a different family (buttons, headers). */
+  font-family: "Font Awesome 6 Free";
+  font-weight: 900;
+}
+
+/* --- the 11 glyphs present in the subset ------------------------------- */
+
+/* chrome */
+.fa-right-from-bracket::before { content: "\f2f5"; }  /* Sign out */
+.fa-camera::before             { content: "\f030"; }  /* Add Photo */
+.fa-save::before               { content: "\f0c7"; }  /* Save to Notebook */
+
+/* weather - these mirror NB.weatherIcon() in shared/api.js, which maps the
+   condition strings produced by backend/weather.py. Change one, change all. */
+.fa-sun::before                 { content: "\f185"; }  /* Clear */
+.fa-cloud-sun::before           { content: "\f6c4"; }  /* Partly Cloudy */
+.fa-cloud::before               { content: "\f0c2"; }  /* Overcast, Cloudy */
+.fa-smog::before                { content: "\f75f"; }  /* Foggy */
+.fa-cloud-rain::before          { content: "\f73d"; }  /* Drizzle, Rain, Showers */
+.fa-cloud-showers-heavy::before { content: "\f740"; }  /* Heavy Rain, Heavy Showers */
+.fa-snowflake::before           { content: "\f2dc"; }  /* Snow, Heavy Snow */
+.fa-bolt::before                { content: "\f0e7"; }  /* Storm */

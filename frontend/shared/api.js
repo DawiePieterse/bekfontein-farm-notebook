@@ -7,7 +7,7 @@ const NB = {
   // it's obvious at a glance whether a device's cached copy is actually up
   // to date - the service worker revalidates in the background, so a device
   // picks up new code on its second load (see frontend/app/service-worker.js).
-  VERSION: "1.5",
+  VERSION: "1.7",
 
   getToken() { return localStorage.getItem("nb_token"); },
   setToken(t) { localStorage.setItem("nb_token", t); },
@@ -93,6 +93,20 @@ const NB = {
       "Storm": "fa-bolt",
     };
     return icons[condition] || "fa-cloud";
+  },
+
+  // Everything a note contains is free text typed or dictated on a phone, and
+  // most of it is rendered by building HTML strings. Without this, a title as
+  // ordinary as `Spray 5" nozzle & filter` renders wrong, and anything that
+  // looks like a tag gets interpreted instead of shown. Use on every value
+  // interpolated into innerHTML, in both text and attribute positions.
+  escapeHtml(value) {
+    return String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
   },
 
   toast(message) {

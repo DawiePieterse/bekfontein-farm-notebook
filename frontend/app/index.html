@@ -11,7 +11,9 @@
 <meta name="apple-mobile-web-app-title" content="Farm Notebook">
 <meta name="theme-color" content="#1e3a8a">
 <script src="../shared/tailwind.js"></script>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<!-- Served from the farm server, not a CDN: the phones are tailnet-only and
+     have no route to the public internet. See shared/fontawesome/fa-subset.css. -->
+<link rel="stylesheet" href="../shared/fontawesome/fa-subset.css">
 <link rel="stylesheet" href="../shared/styles.css">
 <script src="../shared/api.js"></script>
 <script src="idb.js"></script>
@@ -198,7 +200,11 @@
   <div class="bg-white rounded-xl p-5 w-full max-w-lg max-h-[90vh] overflow-y-auto">
     <div class="flex justify-between items-start mb-2">
       <div class="text-lg font-bold" id="detailTitle">Entry</div>
-      <button id="closeDetailBtn" class="text-slate-400"><i class="fa-solid fa-times text-xl"></i></button>
+      <!-- A plain character, not a Font Awesome icon: this is the only way out
+           of the modal, and the icon font comes from a CDN the farm's phones
+           can't reach. Without a route to it the icon rendered 0x0, leaving
+           the entry open with nothing to close it. -->
+      <button id="closeDetailBtn" class="text-slate-400 text-2xl leading-none px-2" aria-label="Close">&times;</button>
     </div>
     <div class="text-xs text-slate-400 mb-3" id="detailMeta"></div>
     <div id="detailBlock" class="text-sm text-slate-600 mb-2"></div>
